@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  FREE
+  PRO
+  TEAM
+}
+
+enum ContractStatus {
+  UPLOADED
+  PROCESSING
+  ANALYZED
+  FAILED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  passwordHash  String
+  name          String?
+  plan          Plan       @default(FREE)
+  contractsUsedThisMonth Int @default(0)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  contracts     Contract[]
+  chatSessions  ChatSession[]
+
+  @@map("users")
+}
+
+model Contract {
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fileName      String
+  fileUrl       String
+  fileType      String
+  rawText       String?        @db.Text
+  status        ContractStatus @default(UPLOADED)
+
+  summary       String?        @db.Text
+  overallRisk   RiskLevel?
+
+  redFlags      RedFlag[]
+  chatSessions  ChatSession[]
+  reports       Report[]
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([userId])
+  @@map("contracts")
+}
+
+model RedFlag {
+  id           String    @id @default(cuid())
+  contractId   String
+  contract     Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  clauseText   String    @db.Text
+  issue        String    @db.Text
+  explanation  String    @db.Text
+  riskLevel    RiskLevel
+  recommendation String  @db.Text
+  clauseLocation String?
+
+  createdAt    DateTime  @default(now())
+
+  @@index([contractId])
+  @@map("red_flags")
+}
+
+model ChatSession {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contractId   String
+  contract     Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  messages     ChatMessage[]
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([contractId])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id            String      @id @default(cuid())
+  sessionId     String
+  session       ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  role          String      // "user" | "assistant"
+  content       String      @db.Text
+
+  createdAt     DateTime    @default(now())
+
+  @@index([sessionId])
+  @@map("chat_messages")
+}
+
+model Report {
+  id            String    @id @default(cuid())
+  contractId    String
+  contract      Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  content       String    @db.Text
+  format        String    @default("pdf")
+
+  createdAt     DateTime  @default(now())
+
+  @@index([contractId])
+  @@map("reports")
+}
+
+model PromptVersion {
+  id          String   @id @default(cuid())
+  taskType    String   // "analysis" | "red_flags" | "chat" | "comparison" | "report"
+  version     Int
+  systemPrompt String  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@unique([taskType, version])
+  @@map("prompt_versions")
+}
